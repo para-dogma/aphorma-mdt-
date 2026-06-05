@@ -1,10 +1,10 @@
 import time
-import asyncio
 from typing import Optional
 from sqlalchemy.orm import Session
 from aphorma_mdt.storage.models import MultidimensionalToken
 from aphorma_mdt.cache.redis_cache import RedisCacheLayer
 from aphorma_mdt.ton.ton_client import ton_client
+import asyncio
 
 class MDTokenService:
     def __init__(self, session: Session, consensus_window_seconds: int = 30, cache: Optional[RedisCacheLayer] = None):
@@ -20,7 +20,8 @@ class MDTokenService:
         
         token = self.session.query(MultidimensionalToken).filter_by(agent_id=agent_id).first()
         if not token:
-            token = self._create_initial_token(agent_id)            self.session.add(token)
+            token = self._create_initial_token(agent_id)
+            self.session.add(token)
             self.session.commit()
         
         if self.cache:
@@ -40,8 +41,7 @@ class MDTokenService:
             skill_levels="{}",
             permissions_mask="{}",
             is_active=True,
-            health_factor=1.0,
-            last_verified_at=now,
+            health_factor=1.0,            last_verified_at=now,
             consensus_window_start=now,
             consensus_window_end=now + self.consensus_window,
             version="1.1",
@@ -69,7 +69,8 @@ class MDTokenService:
         token.last_updated = data["last_updated"]
         return token
     
-    def get_effective_balance(self, agent_id: str) -> int:        token = self.get_or_create_token(agent_id)
+    def get_effective_balance(self, agent_id: str) -> int:
+        token = self.get_or_create_token(agent_id)
         return token.effective_balance
     
     def is_consensus_valid(self, agent_id: str) -> bool:
@@ -82,18 +83,14 @@ class MDTokenService:
         token.last_updated = int(time.time())
         self.session.commit()
         
-        # Anchor on-chain
         try:
             loop = asyncio.new_event_loop()
-            loop.run_until_complete(
-                ton_client.anchor_event(agent_id, "mint", {"amount": amount})
-            )
+            loop.run_until_complete(ton_client.anchor_event(agent_id, "mint", {"amount": amount}))
         except Exception as e:
             print(f"Warning: Failed to anchor on-chain: {e}")
         
         if self.cache:
-            self.cache.invalidate_mdt(agent_id)
-    
+            self.cache.invalidate_mdt(agent_id)    
     def get_token_summary(self, agent_id: str) -> dict:
         token = self.get_or_create_token(agent_id)
         return token.to_dict()

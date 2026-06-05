@@ -11,18 +11,17 @@ import time
 
 app = FastAPI(title="AphormA-MDT", version="1.1.0")
 
-cleanup_service = CleanupService(cleanup_interval_hours=24)policy_engine = PolicyEngine(policy_dir="./policies")
+cleanup_service = CleanupService(cleanup_interval_hours=24)
+policy_engine = PolicyEngine(policy_dir="./policies")
 
 @app.on_event("startup")
 def startup():
     create_tables()
     cleanup_service.start_background_cleanup()
-    print("🚀 AphormA-MDT v1.1 started")
 
 @app.on_event("shutdown")
 def shutdown():
     cleanup_service.stop()
-    print("👋 Shutdown complete")
 
 @app.get("/health")
 def health():
@@ -34,41 +33,19 @@ def stats():
 
 @app.get("/consensus/stats")
 def consensus_stats():
-    """Get consensus statistics"""
     return consensus_window.get_stats()
 
 @app.get("/consensus/{agent_id}")
 def agent_consensus(agent_id: str):
-    """Get consensus state for agent"""
     return consensus_window.get_consensus_for_agent(agent_id)
 
 @app.post("/consensus/validate")
 def validate_action(agent_id: str, action: str):
-    """Validate action through consensus"""
-    result = validator.validate_action(agent_id, action, {})
-    return result
+    return validator.validate_action(agent_id, action, {})
 
 @app.get("/policies")
 def list_policies():
     return {"active": policy_engine.active_policy, "available": list(policy_engine.policies.keys())}
-
-@app.get("/policies/active")
-def active_policy():
-    info = policy_engine.get_active_policy_info()
-    if not info:
-        raise HTTPException(status_code=404, detail="No active policy")
-    return info
-
-@app.post("/policies/{policy_name}/activate")
-def activate_policy(policy_name: str):    if policy_engine.activate_policy(policy_name):
-        return {"status": "activated", "policy": policy_name}
-    raise HTTPException(status_code=404, detail=f"Policy {policy_name} not found")
-
-@app.post("/policies/check")
-def check_policy(action: str, amount: int = 0):
-    result = policy_engine.check_permission(action, amount=amount)
-    return result
-
 @app.post("/tokens/{agent_id}")
 def create_token(agent_id: str, db: Session = Depends(get_db)):
     service = MDTokenService(db)
@@ -88,27 +65,20 @@ def get_effective_balance(agent_id: str, db: Session = Depends(get_db)):
 def check_consensus(agent_id: str, db: Session = Depends(get_db)):
     service = MDTokenService(db)
     token = service.get_or_create_token(agent_id)
-    return {
-        "agent_id": agent_id,
-        "valid": token.is_consensus_valid,
-        "health_factor": token.health_factor,
-        "consensus_window_end": token.consensus_window_end
-    }
+    return {"agent_id": agent_id, "valid": token.is_consensus_valid, "health_factor": token.health_factor}
 
 @app.post("/tokens/{agent_id}/mint")
 def mint_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
     check = policy_engine.check_permission("mint", amount=amount)
     if not check["allowed"]:
         raise HTTPException(status_code=403, detail=check["reason"])
-    
-    # Validate through consensus
     validation = validator.validate_action(agent_id, "mint", {"amount": amount})
     if not validation["valid"]:
         raise HTTPException(status_code=400, detail=validation["reason"])
-    
     service = MDTokenService(db)
     service.mint(agent_id, amount)
     return {"status": "minted", "amount": amount, "consensus_confidence": validation["confidence"]}
+
 @app.post("/admin/cleanup")
 def trigger_cleanup():
     cleanup_service.run_cleanup()
