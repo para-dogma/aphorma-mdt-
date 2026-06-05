@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  aphorma-mdt:
+    build: .
+    container_name: aphorma-mdt
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./mdt_data/mdt.db
+      - CONSENSUS_WINDOW_SECONDS=30
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - mdt_data:/app/mdt_data
+      - ./policies:/app/policies:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: aphorma-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  mdt_data:
+    driver: local
+  redis_data:
+    driver: local
