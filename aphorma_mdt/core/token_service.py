@@ -11,19 +11,17 @@ class MDTokenService:
         self.cache = cache
     
     def get_or_create_token(self, agent_id: str) -> MultidimensionalToken:
-        # Try cache first        if self.cache:
+        if self.cache:
             cached = self.cache.get_mdt(agent_id)
             if cached and cached.get("is_consensus_valid"):
                 return self._dict_to_token(cached)
         
-        # Get from DB
         token = self.session.query(MultidimensionalToken).filter_by(agent_id=agent_id).first()
         if not token:
             token = self._create_initial_token(agent_id)
             self.session.add(token)
             self.session.commit()
         
-        # Update cache
         if self.cache:
             self.cache.set_mdt(agent_id, token.to_dict(), ttl=self.consensus_window)
         
@@ -47,8 +45,7 @@ class MDTokenService:
             consensus_window_end=now + self.consensus_window,
             version="1.1",
             created_at=now,
-            last_updated=now
-        )
+            last_updated=now        )
     
     def _dict_to_token(self, data: dict) -> MultidimensionalToken:
         token = MultidimensionalToken()
@@ -60,7 +57,8 @@ class MDTokenService:
         token.trust_level = data["trust_level"]
         token.skill_levels = data["skill_levels"]
         token.permissions_mask = data["permissions_mask"]
-        token.is_active = data["is_active"]        token.health_factor = data["health_factor"]
+        token.is_active = data["is_active"]
+        token.health_factor = data["health_factor"]
         token.last_verified_at = data["last_verified_at"]
         token.consensus_window_start = data["consensus_window_start"]
         token.consensus_window_end = data["consensus_window_end"]
@@ -83,7 +81,6 @@ class MDTokenService:
         token.last_updated = int(time.time())
         self.session.commit()
         
-        # Invalidate cache
         if self.cache:
             self.cache.invalidate_mdt(agent_id)
     

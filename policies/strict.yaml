@@ -1,20 +1,12 @@
 name: strict
-version: "1.0"
 rules:
   mint:
     enabled: true
     max_amount: 1000
-    require_approval: true
+  stake:
+    enabled: true
+    min_amount: 500
   transfer:
     enabled: true
     max_amount: 100
-    require_consensus: true
-  stake:    enabled: true
-    min_amount: 500
-    lock_period_seconds: 604800
-  health:
-    min_health_factor: 0.8
-    grace_period_seconds: 60
-  consensus:
-    window_seconds: 10
-    require_valid: true
+version: '1.0'
