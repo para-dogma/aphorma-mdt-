@@ -1,19 +1,34 @@
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
-from aphorma_mdt.storage.database import get_db, create_tables
+from aphorma_mdt.storage.database import get_db, create_tables, get_db_stats
+from aphorma_mdt.storage.cleanup import CleanupService
 from aphorma_mdt.core.token_service import MDTokenService
 from aphorma_mdt.config.settings import settings
+import time
 
 app = FastAPI(title="AphormA-MDT", version="1.1.0")
 
+# Global cleanup service
+cleanup_service = CleanupService(cleanup_interval_hours=24)
 @app.on_event("startup")
 def startup():
     create_tables()
+    cleanup_service.start_background_cleanup()
     print("🚀 AphormA-MDT v1.1 started")
+
+@app.on_event("shutdown")
+def shutdown():
+    cleanup_service.stop()
+    print("👋 Shutdown complete")
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "version": "1.1.0"}
+    return {"status": "healthy", "version": "1.1.0", "timestamp": int(time.time())}
+
+@app.get("/stats")
+def stats():
+    """Database statistics"""
+    return get_db_stats()
 
 @app.post("/tokens/{agent_id}")
 def create_token(agent_id: str, db: Session = Depends(get_db)):
@@ -44,8 +59,13 @@ def check_consensus(agent_id: str, db: Session = Depends(get_db)):
 @app.post("/tokens/{agent_id}/mint")
 def mint_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
     service = MDTokenService(db)
-    service.mint(agent_id, amount)
-    return {"status": "minted", "amount": amount}
+    service.mint(agent_id, amount)    return {"status": "minted", "amount": amount}
+
+@app.post("/admin/cleanup")
+def trigger_cleanup():
+    """Manually trigger cleanup"""
+    cleanup_service.run_cleanup()
+    return {"status": "cleanup completed"}
 
 if __name__ == "__main__":
     import uvicorn
