@@ -1,0 +1,21 @@
+name: default
+version: "1.0"
+rules:
+  mint:
+    enabled: true
+    max_amount: 10000
+    require_approval: false
+  transfer:
+    enabled: true
+    max_amount: 1000
+    require_consensus: true
+  stake:
+    enabled: true
+    min_amount: 100
+    lock_period_seconds: 86400
+  health:
+    min_health_factor: 0.5
+    grace_period_seconds: 300
+  consensus:
+    window_seconds: 30
+    require_valid: true
