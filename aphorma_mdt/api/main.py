@@ -8,8 +8,8 @@ import time
 
 app = FastAPI(title="AphormA-MDT", version="1.1.0")
 
-# Global cleanup service
 cleanup_service = CleanupService(cleanup_interval_hours=24)
+
 @app.on_event("startup")
 def startup():
     create_tables()
@@ -27,7 +27,6 @@ def health():
 
 @app.get("/stats")
 def stats():
-    """Database statistics"""
     return get_db_stats()
 
 @app.post("/tokens/{agent_id}")
@@ -59,11 +58,11 @@ def check_consensus(agent_id: str, db: Session = Depends(get_db)):
 @app.post("/tokens/{agent_id}/mint")
 def mint_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
     service = MDTokenService(db)
-    service.mint(agent_id, amount)    return {"status": "minted", "amount": amount}
+    service.mint(agent_id, amount)
+    return {"status": "minted", "amount": amount}
 
 @app.post("/admin/cleanup")
 def trigger_cleanup():
-    """Manually trigger cleanup"""
     cleanup_service.run_cleanup()
     return {"status": "cleanup completed"}
 
