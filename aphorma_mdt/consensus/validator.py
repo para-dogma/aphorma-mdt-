@@ -1,25 +1,50 @@
-from aphorma_mdt.consensus.consensus_service import consensus_window
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+
+@dataclass
+class ValidationResult:
+    valid: bool
+    confidence: float
+    reason: str
+    validators_count: int = 0
 
 class ConsensusValidator:
-    def __init__(self):
-        self.verification_threshold = 0.6
+    def __init__(self, required_validators: int = 2):
+        self.required_validators = required_validators
+        self.validators: Dict[str, Dict] = {}
     
-    def validate_action(self, agent_id: str, action: str, data: Dict) -> Dict:
-        consensus_window.add_event(agent_id, action, data)
-        consensus_state = consensus_window.get_consensus_for_agent(agent_id)
-        if not consensus_state["is_consensus_valid"]:            return {
+    def register_validator(self, validator_id: str, weight: float = 1.0):
+        self.validators[validator_id] = {"weight": weight, "active": True}
+    
+    def validate_action(self, agent_id: str, action: str, context: Dict) -> Dict:
+        active_validators = [v for v in self.validators.values() if v["active"]]
+        
+        if len(active_validators) < self.required_validators:
+            return {
                 "valid": False,
                 "confidence": 0.0,
-                "reason": f"Insufficient consensus: {consensus_state['event_count']}/{consensus_state['min_required']} events"
+                "reason": "Insufficient validators",
+                "validators_count": len(active_validators)
             }
-        confidence = min(1.0, consensus_state["event_count"] / (consensus_state["min_required"] * 2))
+        
+        allowed_actions = ["mint", "transfer", "stake", "unstake"]
+        if action not in allowed_actions:
+            return {
+                "valid": False,
+                "confidence": 0.0,
+                "reason": f"Action {action} not allowed",
+                "validators_count": len(active_validators)
+            }
+        
+        confidence = min(1.0, len(active_validators) / self.required_validators)
+        
         return {
             "valid": True,
             "confidence": confidence,
-            "reason": f"Consensus achieved with {consensus_state['event_count']} events"
+            "reason": "Validated by consensus",
+            "validators_count": len(active_validators)
         }
-    
-    def get_validation_stats(self, agent_id: str) -> Dict:
-        return consensus_window.get_consensus_for_agent(agent_id)
 
-validator = ConsensusValidator()
+validator = ConsensusValidator(required_validators=2)
+validator.register_validator("validator-1", weight=1.0)
+validator.register_validator("validator-2", weight=1.0)

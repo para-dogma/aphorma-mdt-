@@ -87,3 +87,61 @@ def trigger_cleanup():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT)
+
+@app.post("/tokens/{agent_id}/transfer")
+def transfer_tokens(agent_id: str, to_agent: str, amount: int, db: Session = Depends(get_db)):
+    """Transfer tokens between agents"""
+    check = policy_engine.check_permission("transfer", amount=amount)
+    if not check["allowed"]:
+        raise HTTPException(status_code=403, detail=check["reason"])
+    
+    validation = validator.validate_action(agent_id, "transfer", {"to": to_agent, "amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.transfer(agent_id, to_agent, amount)
+    
+    return {
+        "status": "transferred",
+        "from": agent_id,
+        "to": to_agent,
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
+
+@app.post("/tokens/{agent_id}/stake")
+def stake_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
+    """Stake tokens"""
+    check = policy_engine.check_permission("stake", amount=amount)
+    if not check["allowed"]:
+        raise HTTPException(status_code=403, detail=check["reason"])
+    
+    validation = validator.validate_action(agent_id, "stake", {"amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.stake(agent_id, amount)
+    
+    return {
+        "status": "staked",
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
+
+@app.post("/tokens/{agent_id}/unstake")
+def unstake_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
+    """Unstake tokens"""
+    validation = validator.validate_action(agent_id, "unstake", {"amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.unstake(agent_id, amount)
+    
+    return {
+        "status": "unstaked",
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }

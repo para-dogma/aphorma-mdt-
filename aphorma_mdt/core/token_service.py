@@ -94,3 +94,65 @@ class MDTokenService:
     def get_token_summary(self, agent_id: str) -> dict:
         token = self.get_or_create_token(agent_id)
         return token.to_dict()
+
+    def transfer(self, from_agent: str, to_agent: str, amount: int):
+        """Transfer tokens between agents"""
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+        
+        from_token = self.get_or_create_token(from_agent)
+        to_token = self.get_or_create_token(to_agent)
+        
+        if from_token.balance < amount:
+            raise ValueError(f"Insufficient balance: {from_token.balance} < {amount}")
+        
+        from_token.balance -= amount
+        to_token.balance += amount
+        
+        now = int(time.time())
+        from_token.last_updated = now
+        to_token.last_updated = now
+        
+        self.session.commit()
+        
+        if self.cache:
+            self.cache.set_mdt(from_agent, from_token.to_dict())
+            self.cache.set_mdt(to_agent, to_token.to_dict())
+    
+    def stake(self, agent_id: str, amount: int):
+        """Stake tokens"""
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+        
+        token = self.get_or_create_token(agent_id)
+        
+        if token.balance < amount:
+            raise ValueError(f"Insufficient balance: {token.balance} < {amount}")
+        
+        token.balance -= amount
+        token.stake += amount
+        token.last_updated = int(time.time())
+        
+        self.session.commit()
+        
+        if self.cache:
+            self.cache.set_mdt(agent_id, token.to_dict())
+    
+    def unstake(self, agent_id: str, amount: int):
+        """Unstake tokens"""
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+        
+        token = self.get_or_create_token(agent_id)
+        
+        if token.stake < amount:
+            raise ValueError(f"Insufficient stake: {token.stake} < {amount}")
+        
+        token.stake -= amount
+        token.balance += amount
+        token.last_updated = int(time.time())
+        
+        self.session.commit()
+        
+        if self.cache:
+            self.cache.set_mdt(agent_id, token.to_dict())
