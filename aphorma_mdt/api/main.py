@@ -1,10 +1,15 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Dict
+from typing import Dict, List, Optional
 import time
+import json
 
-from aphorma_mdt.storage.database import get_session, create_tables
+from aphorma_mdt.storage.database import get_db, init_db, Base, engine
+from aphorma_mdt.storage.models import MultidimensionalToken
 from aphorma_mdt.core.token_service import MDTokenService
+from aphorma_mdt.consensus.window import ConsensusWindow
+from aphorma_mdt.consensus.validator import ConsensusValidator
+from aphorma_mdt.policy.engine import PolicyEngine
 from aphorma_mdt.config.settings import settings
 
 app = FastAPI(
@@ -13,100 +18,159 @@ app = FastAPI(
     version="1.1.0"
 )
 
+consensus_window = ConsensusWindow(window_seconds=settings.CONSENSUS_WINDOW_SECONDS)
+validator = ConsensusValidator(required_validators=2)
+policy_engine = PolicyEngine()
+
+validator.register_validator("validator-1", weight=1.0)
+validator.register_validator("validator-2", weight=1.0)
+
 @app.on_event("startup")
-async def startup_event():
-    create_tables()
-    print(f"🚀 AphormA-MDT v1.1 started")
+def startup():
+    from aphorma_mdt.storage.models import Base
+    Base.metadata.create_all(bind=engine)
+    print("Database initialized")
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "version": "1.1.0", "timestamp": int(time.time())}
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "AphormA-MDT",
+        "version": "1.1.0",        "timestamp": int(time.time())
+    }
+
+@app.get("/consensus")
+def get_consensus_stats():
+    return consensus_window.get_stats()
+
+@app.get("/consensus/{agent_id}")
+def agent_consensus(agent_id: str):
+    return consensus_window.get_consensus_for_agent(agent_id)
+
+@app.post("/consensus/validate")
+def validate_action(agent_id: str, action: str):
+    return validator.validate_action(agent_id, action, {})
+
+@app.get("/policies")
+def list_policies():
+    return {
+        "active": policy_engine.active_policy,
+        "available": list(policy_engine.policies.keys())
+    }
 
 @app.post("/tokens/{agent_id}")
-async def create_token(agent_id: str, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        token = service.get_or_create_token(agent_id)
-        return token.to_dict()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def create_token(agent_id: str, db: Session = Depends(get_db)):
+    service = MDTokenService(db)
+    token = service.get_or_create_token(agent_id)
+    return token.to_dict()
 
 @app.get("/tokens/{agent_id}")
-async def get_token(agent_id: str, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        return service.get_token_summary(agent_id)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+def get_token(agent_id: str, db: Session = Depends(get_db)):
+    service = MDTokenService(db)
+    return service.get_token_summary(agent_id)
 
 @app.get("/tokens/{agent_id}/effective-balance")
-async def get_effective_balance(agent_id: str, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        balance = service.get_effective_balance(agent_id)
-        return {"agent_id": agent_id, "effective_balance": balance}
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+def get_effective_balance(agent_id: str, db: Session = Depends(get_db)):
+    service = MDTokenService(db)
+    effective_balance = service.get_effective_balance(agent_id)
+    return {
+        "agent_id": agent_id,
+        "effective_balance": effective_balance
+    }
+
 @app.get("/tokens/{agent_id}/consensus")
-async def check_consensus(agent_id: str, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        is_valid = service.is_consensus_valid(agent_id)
-        token = service.get_or_create_token(agent_id)
-        return {
-            "agent_id": agent_id,
-            "valid": is_valid,
-            "consensus_window_start": token.consensus_window_start,
-            "consensus_window_end": token.consensus_window_end,
-            "current_time": int(time.time()),
-            "health_factor": token.health_factor
-        }
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+def check_consensus(agent_id: str, db: Session = Depends(get_db)):
+    service = MDTokenService(db)
+    token = service.get_or_create_token(agent_id)
+    return {
+        "agent_id": agent_id,
+        "valid": token.is_consensus_valid,
+        "health_factor": token.health_factor,        "consensus_window_start": token.consensus_window_start,
+        "consensus_window_end": token.consensus_window_end,
+        "current_time": int(time.time())
+    }
 
 @app.post("/tokens/{agent_id}/mint")
-async def mint_tokens(agent_id: str, amount: int, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        service.mint(agent_id, amount)
-        return {"status": "minted", "agent_id": agent_id, "amount": amount}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def mint_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
+    check = policy_engine.check_permission("mint", amount=amount)
+    if not check["allowed"]:
+        raise HTTPException(status_code=403, detail=check["reason"])
+    
+    validation = validator.validate_action(agent_id, "mint", {"amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.mint(agent_id, amount)
+    
+    return {
+        "status": "minted",
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
 
-@app.post("/tokens/{from_agent}/transfer")
-async def transfer_tokens(from_agent: str, to: str, amount: int, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        service.transfer(from_agent, to, amount)
-        return {"status": "transferred", "from": from_agent, "to": to, "amount": amount}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/tokens/{agent_id}/transfer")
+def transfer_tokens(agent_id: str, to_agent: str, amount: int, db: Session = Depends(get_db)):
+    check = policy_engine.check_permission("transfer", amount=amount)
+    if not check["allowed"]:
+        raise HTTPException(status_code=403, detail=check["reason"])
+    
+    validation = validator.validate_action(agent_id, "transfer", {"to": to_agent, "amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.transfer(agent_id, to_agent, amount)
+    
+    return {
+        "status": "transferred",
+        "from": agent_id,
+        "to": to_agent,
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
 
 @app.post("/tokens/{agent_id}/stake")
-async def stake_tokens(agent_id: str, amount: int, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        service.stake(agent_id, amount)
-        return {"status": "staked", "agent_id": agent_id, "amount": amount}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def stake_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
+    check = policy_engine.check_permission("stake", amount=amount)
+    if not check["allowed"]:
+        raise HTTPException(status_code=403, detail=check["reason"])    
+    validation = validator.validate_action(agent_id, "stake", {"amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.stake(agent_id, amount)
+    
+    return {
+        "status": "staked",
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
+
 @app.post("/tokens/{agent_id}/unstake")
-async def unstake_tokens(agent_id: str, amount: int, db: Session = Depends(get_session)):
-    service = MDTokenService(db, settings.CONSENSUS_WINDOW_SECONDS)
-    try:
-        service.unstake(agent_id, amount)
-        return {"status": "unstaked", "agent_id": agent_id, "amount": amount}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def unstake_tokens(agent_id: str, amount: int, db: Session = Depends(get_db)):
+    validation = validator.validate_action(agent_id, "unstake", {"amount": amount})
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail=validation["reason"])
+    
+    service = MDTokenService(db)
+    service.unstake(agent_id, amount)
+    
+    return {
+        "status": "unstaked",
+        "amount": amount,
+        "consensus_confidence": validation["confidence"]
+    }
+
+@app.post("/admin/cleanup")
+def trigger_cleanup(db: Session = Depends(get_db)):
+    consensus_window.events.clear()
+    return {
+        "status": "cleanup_completed",
+        "timestamp": int(time.time())
+    }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT)
+    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT, log_level="info")
