@@ -1,1 +1,1 @@
-"""Edge Consensus Module"""
+"""Edge Module"""

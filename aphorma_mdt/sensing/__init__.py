@@ -1,1 +1,1 @@
-"""WiFi Sensing Module"""
+"""Sensing Module"""
