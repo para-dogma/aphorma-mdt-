@@ -1,7 +1,8 @@
 """
 AphormA-MDT API v2.0 - Production Ready with Security
 """
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI
+from aphorma_mdt.core.metrics import metrics_middleware, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
@@ -27,6 +28,7 @@ from aphorma_mdt.core.security_middleware import setup_security
 
 # Initialize FastAPI app
 app = FastAPI(
+    middleware=[Middleware(metrics_middleware)],
     title="AphormA-MDT",
     description="Consensus-Aware Multidimensional Token for DePIN - Production Ready",
     version="2.0.0",
@@ -282,3 +284,6 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         log_level="info"
     )
+
+from prometheus_client import make_asgi_app
+app.mount("/metrics", make_asgi_app())
