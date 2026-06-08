@@ -1,0 +1,20 @@
+[33m41592b3[m[33m ([m[1;36mHEAD[m[33m, [m[1;33mtag: [m[1;33mv2.1.0-audit[m[33m, [m[1;33mtag: [m[1;33mv2.1.0[m[33m)[m security: remove databases, add audit report
+[33m092734c[m fix: remove database files, add audit report
+[33m5d50a40[m docs: add audit report v2.1
+[33m312d20f[m fix: remove database from history, add .gitignore, complete project structure
+[33me717f44[m fix: remove database, add .gitignore, complete documentation
+[33mb44dd07[m fix: remove database file from repo, add .gitignore
+[33ma12ff7c[m feat: AphormA-MDT v2.0 Production Ready
+[33m0eeddd5[m feat: MVS v1.1 Production Ready
+[33m54f4f26[m Add: Docker setup for production deployment
+[33m112013c[m Fix: Consensus service syntax errors
+[33mc09ef51[m Fix: Add TON module and fix syntax errors
+[33m31ec40e[m ✅ ФАЗА 3 COMPLETE: Enterprise Grade
+[33md26a340[m Add: TON Client v1.1 with retry and on-chain anchor
+[33m9b02e22[m ✅ ФАЗА 2 COMPLETE: Production Readiness
+[33mb6254b5[m Add: Policy Engine v1.0 with YAML configuration
+[33m4f93092[m Add: RedisCacheLayer v1.1 with circuit breaker
+[33m80dcdd7[m Add: StorageLayer v3.1 - WAL mode, indexes, cleanup
+[33m97abf0c[m Add: README.md
+[33m50f4282[m ✅ AphormA-MDT v1.1 MVS - Production Ready
+[33m9c66aab[m Initial commit: AphormA-MDT MVS structure
