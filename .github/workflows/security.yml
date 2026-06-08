@@ -1,0 +1,47 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # Every Monday
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety
+        pip install -r requirements.txt    
+    - name: Run safety check
+      run: |
+        safety check --full-report
+    
+    - name: Check for outdated packages
+      run: |
+        pip list --outdated
+    
+    - name: Run bandit (security linter)
+      run: |
+        pip install bandit
+        bandit -r aphorma_mdt/ -f json -o bandit-report.json || true
+    
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-report
+        path: |
+          bandit-report.json
